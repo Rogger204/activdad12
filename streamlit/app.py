@@ -1,157 +1,60 @@
-import os
-from pathlib import Path
-
+import streamlit as st
 import pandas as pd
 import psycopg2
-import streamlit as st
+import os
 
-# ---------------------------------
-# CONFIG
-# ---------------------------------
+# Configuración básica
+st.set_page_config(page_title="Mi Presupuesto", layout="centered")
 
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+def get_db():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD")
+    )
 
-# PostgreSQL
-conn = psycopg2.connect(
-    host=os.getenv("DB_HOST"),
-    database=os.getenv("DB_NAME"),
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD")
-)
+st.title("💰 Control de Gastos")
 
-cur = conn.cursor()
-
-# ---------------------------------
-# TABLE
-# ---------------------------------
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS productos (
-    id SERIAL PRIMARY KEY,
-    nombre VARCHAR(100),
-    precio NUMERIC(10,2)
-)
-""")
-
-conn.commit()
-
-# ---------------------------------
-# UI
-# ---------------------------------
-
-st.set_page_config(page_title="CRUD Demo", layout="wide")
-
-st.title("🐳 Streamlit + PostgreSQL CRUD")
-
-tab1, tab2 = st.tabs(["CRUD Productos", "Subir Archivos"])
-
-# =================================
-# CRUD
-# =================================
-
-with tab1:
-
-    st.header("➕ Crear producto")
-
-    with st.form("crear_producto"):
-        nombre = st.text_input("Nombre")
-        precio = st.number_input("Precio", min_value=0.0)
-
-        submitted = st.form_submit_button("Guardar")
-
-        if submitted:
-            cur.execute(
-                "INSERT INTO productos (nombre, precio) VALUES (%s, %s)",
-                (nombre, precio)
-            )
+# Formulario simple
+with st.expander("➕ Añadir nuevo gasto"):
+    with st.form("gasto_form", clear_on_submit=True):
+        nombre = st.text_input("Concepto")
+        monto = st.number_input("Monto", min_value=0.0)
+        if st.form_submit_button("Registrar"):
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("INSERT INTO productos (nombre, precio) VALUES (%s, %s)", (nombre, monto))
             conn.commit()
-            st.success("Producto creado")
+            conn.close()
+            st.rerun()
 
-    st.divider()
+# Carga de datos
+conn = get_db()
+df = pd.read_sql("SELECT * FROM productos", conn)
+conn.close()
 
-    st.header("📋 Lista de productos")
+# Visualización más limpia
+st.subheader("Resumen de tus gastos")
 
-    df = pd.read_sql(
-        "SELECT * FROM productos ORDER BY id",
-        conn
-    )
+if not df.empty:
+    # Filtro visual simple
+    limite = st.slider("Filtrar gastos mayores a:", 0, int(df['precio'].max()), 0)
+    df_filtrado = df[df['precio'] >= limite]
+    
+    st.dataframe(df_filtrado, use_container_width=True)
+    
+    # Métricas rápidas
+    total = df['precio'].sum()
+    st.metric("Total gastado", f"S/ {total:,.2f}")
+else:
+    st.info("No hay gastos registrados aún.")
 
-    st.dataframe(df, use_container_width=True)
-
-    st.divider()
-
-    st.header("✏️ Actualizar producto")
-
-    product_id = st.number_input(
-        "ID producto",
-        min_value=1,
-        step=1
-    )
-
-    nuevo_nombre = st.text_input("Nuevo nombre")
-    nuevo_precio = st.number_input(
-        "Nuevo precio",
-        min_value=0.0,
-        key="nuevo_precio"
-    )
-
-    if st.button("Actualizar"):
-        cur.execute(
-            """
-            UPDATE productos
-            SET nombre=%s, precio=%s
-            WHERE id=%s
-            """,
-            (nuevo_nombre, nuevo_precio, product_id)
-        )
-
-        conn.commit()
-        st.success("Producto actualizado")
-
-    st.divider()
-
-    st.header("🗑️ Eliminar producto")
-
-    delete_id = st.number_input(
-        "ID a eliminar",
-        min_value=1,
-        step=1,
-        key="delete"
-    )
-
-    if st.button("Eliminar"):
-        cur.execute(
-            "DELETE FROM productos WHERE id=%s",
-            (delete_id,)
-        )
-
-        conn.commit()
-        st.warning("Producto eliminado")
-
-# =================================
-# FILES
-# =================================
-
-with tab2:
-
-    st.header("📂 Subida de archivos")
-
-    uploaded_file = st.file_uploader(
-        "Selecciona un archivo"
-    )
-
-    if uploaded_file is not None:
-
-        file_path = UPLOAD_DIR / uploaded_file.name
-
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        st.success(f"Archivo guardado en {file_path}")
-
-        st.subheader("📁 Archivos actuales")
-
-        archivos = os.listdir(UPLOAD_DIR)
-
-        st.write(archivos)
+# Botón para borrar todo (más práctico que borrar uno por uno)
+if st.button("Limpiar registros"):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM productos")
+    conn.commit()
+    conn.close()
+    st.rerun()
