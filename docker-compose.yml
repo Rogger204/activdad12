@@ -1,0 +1,46 @@
+services:
+  streamlit:
+    image: python:3.11-slim
+    container_name: streamlit_app
+
+    working_dir: /app
+
+    ports:
+      - "8501:8501"
+
+    environment:
+      DB_HOST: postgres
+      DB_NAME: demo_db
+      DB_USER: demo_user
+      DB_PASSWORD: demo_pass
+
+    volumes:
+      - ./streamlit:/app
+      - ./streamlit/uploads:/app/uploads
+
+    depends_on:
+      - postgres
+
+    command: >
+      bash -c "
+      pip install -r requirements.txt &&
+      streamlit run app.py --server.address=0.0.0.0
+      "
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres_db
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_DB: demo_db
+      POSTGRES_USER: demo_user
+      POSTGRES_PASSWORD: demo_pass
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
