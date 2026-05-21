@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import os
+from pathlib import Path
 
-# Configuración básica
-st.set_page_config(page_title="Mi Presupuesto", layout="centered")
+# Configuración
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+st.set_page_config(page_title="Control Pro", layout="centered")
 
 def get_db():
     return psycopg2.connect(
@@ -14,47 +17,46 @@ def get_db():
         password=os.getenv("DB_PASSWORD")
     )
 
-st.title("💰 Control de Gastos")
+st.title("💰 Control de Gastos y Archivos")
 
-# Formulario simple
-with st.expander("➕ Añadir nuevo gasto"):
-    with st.form("gasto_form", clear_on_submit=True):
-        nombre = st.text_input("Concepto")
-        monto = st.number_input("Monto", min_value=0.0)
-        if st.form_submit_button("Registrar"):
+tab1, tab2 = st.tabs(["📊 Gastos", "📂 Archivos"])
+
+with tab1:
+    with st.expander("➕ Añadir nuevo gasto"):
+        with st.form("gasto_form", clear_on_submit=True):
+            nombre = st.text_input("Concepto")
+            monto = st.number_input("Monto", min_value=0.0)
+            if st.form_submit_button("Registrar"):
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("INSERT INTO productos (nombre, precio) VALUES (%s, %s)", (nombre, monto))
+                conn.commit()
+                conn.close()
+                st.rerun()
+
+    conn = get_db()
+    df = pd.read_sql("SELECT * FROM productos", conn)
+    conn.close()
+
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
+        st.metric("Total registrado", f"S/ {df['precio'].sum():,.2f}")
+        if st.button("Limpiar registros"):
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("INSERT INTO productos (nombre, precio) VALUES (%s, %s)", (nombre, monto))
+            cur.execute("DELETE FROM productos")
             conn.commit()
             conn.close()
             st.rerun()
+    else:
+        st.info("No hay gastos registrados.")
 
-# Carga de datos
-conn = get_db()
-df = pd.read_sql("SELECT * FROM productos", conn)
-conn.close()
-
-# Visualización más limpia
-st.subheader("Resumen de tus gastos")
-
-if not df.empty:
-    # Filtro visual simple
-    limite = st.slider("Filtrar gastos mayores a:", 0, int(df['precio'].max()), 0)
-    df_filtrado = df[df['precio'] >= limite]
+with tab2:
+    uploaded_file = st.file_uploader("Subir documento")
+    if uploaded_file:
+        with open(UPLOAD_DIR / uploaded_file.name, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success(f"Archivo {uploaded_file.name} guardado.")
     
-    st.dataframe(df_filtrado, use_container_width=True)
-    
-    # Métricas rápidas
-    total = df['precio'].sum()
-    st.metric("Total gastado", f"S/ {total:,.2f}")
-else:
-    st.info("No hay gastos registrados aún.")
-
-# Botón para borrar todo (más práctico que borrar uno por uno)
-if st.button("Limpiar registros"):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM productos")
-    conn.commit()
-    conn.close()
-    st.rerun()
+    st.subheader("Archivos en servidor")
+    st.write(os.listdir(UPLOAD_DIR))
