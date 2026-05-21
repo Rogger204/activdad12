@@ -1,32 +1,28 @@
-version: '3.8'
-
 services:
+  # Servicio 1: Tu Aplicación Streamlit
   streamlit:
-    build: .
+    image: python:3.11-slim
     container_name: streamlit_app
+    working_dir: /app
     ports:
       - "8501:8501"
-    environment:
-      DB_HOST: postgres
-      DB_NAME: demo_db
-      DB_USER: demo_user
-      DB_PASSWORD: demo_pass
     volumes:
       - .:/app
       - ./uploads:/app/uploads
     depends_on:
-      - postgres
-    command: bash -c "pip install -r requirements.txt && streamlit run app.py"
+      - mongo
+    command: >
+      bash -c "pip install -r requirements.txt && 
+               streamlit run app.py --server.address=0.0.0.0"
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: postgres_db
-    environment:
-      POSTGRES_DB: demo_db
-      POSTGRES_USER: demo_user
-      POSTGRES_PASSWORD: demo_pass
+  # Servicio 2: MongoDB
+  mongo:
+    image: mongo:latest
+    container_name: mongo_db
+    ports:
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
 
 volumes:
-  postgres_data:
+  mongo_data:
